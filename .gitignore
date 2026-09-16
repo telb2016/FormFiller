@@ -6,3 +6,4 @@ obj/
 .idea/
 profiles/*.ini
 !profiles/example.ini
+publish*/
