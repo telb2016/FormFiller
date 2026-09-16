@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 using System.CommandLine;
 
 var iniOption = new Option<FileInfo>("--ini", "Path to the profile INI file") { IsRequired = true };
-var smokeOption = new Option<bool>("--smoke", () => false, "INI round-trip only; no browser (Wine-safe)");
+var smokeOption = new Option<bool>("--smoke", () => false, "INI round-trip only; no browser");
 
 var root = new RootCommand("FormFiller — Playwright form helper with INI-saved IDs")
 {
@@ -22,6 +22,7 @@ static async Task<int> RunAsync(string iniPath, bool smoke)
 {
     try
     {
+        EnsureIniExists(iniPath);
         var ini = new IniFile(iniPath);
 
         if (smoke)
@@ -34,6 +35,30 @@ static async Task<int> RunAsync(string iniPath, bool smoke)
         Console.Error.WriteLine($"FormFiller failed: {ex.Message}");
         return 1;
     }
+}
+
+static void EnsureIniExists(string iniPath)
+{
+    if (File.Exists(iniPath))
+        return;
+
+    var dir = Path.GetDirectoryName(Path.GetFullPath(iniPath));
+    if (!string.IsNullOrEmpty(dir))
+        Directory.CreateDirectory(dir);
+
+    File.WriteAllText(iniPath, """
+        [Form]
+        ; Happy-path form config (Linux native Playwright)
+        Url=https://example.com/
+        ; Optional: CSS selectors to fill before you take over. Leave blank to skip.
+        ; Field.email=#email
+        ; Field.name=#name
+        ; Value.email=
+        ; Value.name=
+
+        [SavedIds]
+        """);
+    Console.WriteLine($"Created new profile: {iniPath}");
 }
 
 static int RunSmoke(IniFile ini, string iniPath)
@@ -57,15 +82,42 @@ static int RunSmoke(IniFile ini, string iniPath)
 
 static async Task<int> RunPlaywrightAsync(IniFile ini, string iniPath)
 {
-    // v1 stub: headed browser + placeholder page. Replace URL/selectors with your real form.
-    const string placeholderUrl = "https://example.com/";
+    var url = ini.GetValue("Form", "Url");
+    if (string.IsNullOrWhiteSpace(url))
+    {
+        Console.Error.WriteLine("Set [Form] Url= in the INI (site/form URL).");
+        return 1;
+    }
 
     using var playwright = await Playwright.CreateAsync();
     await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = false });
     var page = await browser.NewPageAsync();
-    await page.GotoAsync(placeholderUrl);
+    await page.GotoAsync(url);
+    Console.WriteLine($"Opened {url}");
 
-    Console.WriteLine("Browser open (headed). Click through your form, then return here.");
+    // Real-form hook: any Form Field.<name> + Value.<name> pair gets filled automatically.
+    var form = ini.GetSection("Form");
+    foreach (var (key, selector) in form)
+    {
+        if (!key.StartsWith("Field.", StringComparison.OrdinalIgnoreCase))
+            continue;
+        var name = key["Field.".Length..];
+        if (string.IsNullOrWhiteSpace(selector))
+            continue;
+        if (!form.TryGetValue($"Value.{name}", out var value) || string.IsNullOrEmpty(value))
+            continue;
+        try
+        {
+            await page.FillAsync(selector, value);
+            Console.WriteLine($"Filled {name} via {selector}");
+        }
+        catch (PlaywrightException ex)
+        {
+            Console.WriteLine($"Skip fill {name} ({selector}): {ex.Message}");
+        }
+    }
+
+    Console.WriteLine("Browser open (headed). Finish the form, then return here.");
     Console.Write("Enter an id to save (or leave blank to skip): ");
     var id = Console.ReadLine()?.Trim();
 

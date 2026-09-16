@@ -1,63 +1,54 @@
 # FormFiller
 
-C# / .NET 8 console app that fills web forms with Playwright and stores reusable IDs in an INI profile.
+Linux-native C# / .NET 8 + Playwright form helper. Profile INIs store form config and reusable IDs.
+
+**Happy path: Linux native only** (`dotnet` + Playwright + `./formfiller.sh`). Wine is not part of the product path. AutoHotkey is optional for native Windows only.
+
+## Quick start (Linux)
+
+```bash
+dotnet build -c Release
+# once: install Chromium for Playwright
+dotnet build -c Release
+pwsh bin/Release/net8.0/playwright.ps1 install chromium   # or: npx playwright install chromium via playwright CLI
+
+./formfiller.sh --smoke          # INI round-trip, exit 0, no browser
+./formfiller.sh                  # pick/create profile → headed Playwright
+./formfiller.sh work.ini         # use profiles/work.ini
+```
 
 ## CLI
 
 ```text
-FormFiller.exe --ini "C:\path\to\profile.ini"
-FormFiller.exe --ini "C:\path\to\profile.ini" --smoke
+dotnet run -- --ini path/to/profile.ini
+dotnet run -- --ini path/to/profile.ini --smoke
 ```
 
 | Flag | Meaning |
 |------|---------|
-| `--ini` | **Required.** Profile INI path (created if missing). |
-| `--smoke` | INI round-trip only — **no browser**. Safe for Wine smoke tests. |
+| `--ini` | **Required.** Profile INI (created with a `[Form]` stub if missing). |
+| `--smoke` | INI round-trip only — no browser. |
 
-## INI layout
+## INI layout (real-form hook)
 
 ```ini
+[Form]
+Url=https://your-site.example/form
+Field.email=#email
+Field.name=input[name="name"]
+Value.email=you@example.com
+Value.name=Brian
+
 [SavedIds]
-smoke_test=abc123
 id_20260916010101=order-42
 ```
 
-AutoHotkey can `IniRead` the same file later to pick a known id.
+Any `Field.<name>` + `Value.<name>` pair is filled automatically after navigation. Leave values blank to click through yourself, then optionally save an id when prompted.
 
-## Build / run
-
-```bash
-dotnet build
-dotnet run -- --ini /tmp/test.ini --smoke
-```
-
-Windows publish (for AHK / Wine):
+## Windows (optional)
 
 ```bash
-dotnet publish -c Release -r win-x64 --self-contained false -o ./publish
+dotnet publish -c Release -r win-x64 -o ./publish
 ```
 
-Then AHK:
-
-```text
-FormFiller.exe --ini "…\profiles\work.ini"
-FormFiller.exe --ini "…\profiles\work.ini" --smoke
-```
-
-## Platform notes
-
-- **.NET + Playwright** run natively on Windows and Linux — no Wine required for the C# app.
-- **`--smoke`**: launch + read/write `[SavedIds]`, exit 0. Use this under Wine for a Windows-built exe.
-- **Real click-through**: headed Playwright on native Windows or Linux. Do **not** expect Chromium automation under Wine.
-- **AHK hotkey launcher** on Linux needs Wine (or skip AHK and call `dotnet` directly).
-
-## Playwright browsers (non-smoke)
-
-After first build:
-
-```bash
-pwsh bin/Debug/net8.0/playwright.ps1 install chromium
-# or: dotnet exec …/playwright.dll install chromium
-```
-
-v1 opens `https://example.com/` as a stub — replace URL/selectors for your real form.
+AHK can launch `publish\FormFiller.exe --ini "…"` on **native Windows**. Do not expect that exe under Wine.

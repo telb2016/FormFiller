@@ -4,5 +4,5 @@ obj/
 *.suo
 .vs/
 .idea/
-*.ini
-profiles/
+profiles/*.ini
+!profiles/example.ini
